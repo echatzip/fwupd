@@ -11,6 +11,7 @@ plugins/uefi-dbx/fu-dbxtool.c
 src/fu-console.c
 src/fu-debug.c
 src/fu-engine-helper.c
+src/fu-engine-repair.c
 src/fu-main.c
 src/fu-offline.c
 src/fu-remote-list.c
