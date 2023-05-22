@@ -4247,6 +4247,96 @@ fu_util_get_bios_setting(FuUtilPrivate *priv, gchar **values, GError **error)
 }
 
 static gboolean
+fu_util_auto_repair(FuUtilPrivate *priv, gchar **values, GError **error)
+{
+	gchar *repair_name = NULL;
+	g_autofree gchar *action = NULL;
+	g_autoptr(GList) fu_repair_list = NULL;
+	gint ret = 0;
+
+	for (guint i = 0; values[i] != NULL; i++) {
+		fu_console_print(priv->console,
+				 "%s: %s",
+				 _("Reparing"),
+				 values[i]);
+
+		if (i == 0) {
+			repair_name = values[i];
+		} else if (i == 1) {
+			if (!g_strcmp0 (values[i], "do")) {
+				action = g_strdup_printf ("do");
+			} else if (!g_strcmp0 (values[i], "undo")) {
+				action = g_strdup_printf ("undo");
+			} else {
+				g_set_error_literal(error,
+						    FWUPD_ERROR,
+						    FWUPD_ERROR_INVALID_ARGS,
+						    "Invalid arguments, expected do or undo");
+				return FALSE;
+			}
+			break;
+		}
+	}
+
+	if (!action)
+		action = g_strdup_printf ("do");
+
+	ret = fwupd_client_repair(priv->client,
+				 repair_name,
+				 action,
+				 priv->cancellable,
+				 error);
+	if (!ret)
+		return FALSE;
+
+	fu_console_print_full(priv->console, FU_CONSOLE_PRINT_FLAG_NONE, "%s\n", _("Repair Success"));
+
+	return TRUE;
+}
+
+static void
+title_print_padding(const gchar *title, GString *dst_string, gsize maxlen)
+{
+	gsize title_len;
+	gsize maxpad = maxlen;
+
+	if (maxlen == 0)
+	maxpad = 50;
+
+	if (title == NULL || dst_string == NULL)
+		return;
+	g_string_append_printf (dst_string, "%s", title);
+
+	title_len = g_utf8_strlen (title, -1) + 1;
+	for (gsize i = title_len; i < maxpad; i++)
+		g_string_append (dst_string, " ");
+}
+
+
+static void
+fu_util_repair_list(FuConsole *console)
+{
+	g_autoptr(GString) repair_msg;
+
+	repair_msg = g_string_new(NULL);
+	title_print_padding (FWUPD_SECURITY_ATTR_ID_IOMMU, repair_msg, 40);
+	/* TRANSLATORS: This means rapair the specific system function. */
+	g_string_append_printf (repair_msg, "%s\n", _("Enable IOMMU"));
+	title_print_padding (FWUPD_SECURITY_ATTR_ID_KERNEL_LOCKDOWN, repair_msg, 40);
+	/* TRANSLATORS: This means rapair the specific system function. */
+	g_string_append_printf (repair_msg, "%s\n", _("Lockdown the Linux kernel"));
+	fu_console_print_full(console, FU_CONSOLE_PRINT_FLAG_NONE, "%s\n", repair_msg->str);
+}
+
+static gboolean
+fu_util_repair_list_items(FuUtilPrivate *priv, gchar **values, GError **error)
+{
+	fu_util_repair_list(priv->console);
+
+	return TRUE;
+}
+
+static gboolean
 fu_util_emulation_tag(FuUtilPrivate *priv, gchar **values, GError **error)
 {
 	g_autoptr(FwupdDevice) dev = NULL;
@@ -4865,6 +4955,22 @@ main(int argc, char *argv[])
 			      /* TRANSLATORS: command description */
 			      _("Inhibit the system to prevent upgrades"),
 			      fu_util_inhibit);
+
+	fu_util_cmd_array_add(cmd_array,
+			      "repair",
+			      /* TRANSLATORS: command argument: uppercase, spaces->dashes */
+			      _("[STREAM_ID]"),
+			      /* TRANSLATORS: command description */
+			      _("Automatically repair the system configuration to improve host security"),
+			      fu_util_auto_repair);
+
+	fu_util_cmd_array_add(cmd_array,
+			      "repair-list",
+			      NULL,
+			      /* TRANSLATORS: command description */
+			      _("List auto-repairing items"),
+			      fu_util_repair_list_items);
+
 	fu_util_cmd_array_add(cmd_array,
 			      "uninhibit",
 			      /* TRANSLATORS: command argument: uppercase, spaces->dashes */
