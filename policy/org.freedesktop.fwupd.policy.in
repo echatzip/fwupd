@@ -207,4 +207,14 @@
     <annotate key="org.freedesktop.policykit.imply">org.freedesktop.fwupd.get-bios-settings</annotate>
   </action>
 
+  <action id="org.freedesktop.fwupd.repair">
+    <description>Repair kernel parameter</description>
+    <!-- TRANSLATORS: this is the PolicyKit modal dialog -->
+    <message>Authentication is required to repair the HSI flaw</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
 </policyconfig>
