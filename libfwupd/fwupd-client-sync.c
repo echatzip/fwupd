@@ -2676,3 +2676,62 @@ fwupd_client_emulation_save(FwupdClient *self, GCancellable *cancellable, GError
 	}
 	return g_steal_pointer(&helper->bytes);
 }
+
+
+static void
+fwupd_client_repair_cb(GObject *source, GAsyncResult *res, gpointer user_data)
+{
+	FwupdClientHelper *helper = (FwupdClientHelper *)user_data;
+	helper->ret =
+	    fwupd_client_repair_finish(FWUPD_CLIENT(source), res, &helper->error);
+	g_main_loop_quit(helper->loop);
+}
+
+/**
+ * fwupd_client_repair:
+ * @self: a #FwupdClient
+ * @repair_item: the AppStream_id
+ * @action: specify do or undo
+ * @cancellable: (nullable): optional #GCancellable
+ * @error: (nullable): optional return location for an error
+ *
+ * Repair the failed security attributes.
+ *
+ * Returns: %TRUE for success
+ *
+ * Since: 1.9.2
+ **/
+gboolean
+fwupd_client_repair(FwupdClient *self,
+		    const gchar *repair_item,
+		    const gchar *action,
+		    GCancellable *cancellable,
+		    GError **error)
+{
+	g_autoptr(FwupdClientHelper) helper = NULL;
+
+	g_return_val_if_fail(FWUPD_IS_CLIENT(self), FALSE);
+	g_return_val_if_fail(repair_item != NULL, FALSE);
+	g_return_val_if_fail(action != NULL, FALSE);
+	g_return_val_if_fail(cancellable == NULL || G_IS_CANCELLABLE(cancellable), FALSE);
+	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
+
+	/* connect */
+	if (!fwupd_client_connect(self, cancellable, error))
+		return FALSE;
+
+	/* call async version and run loop until complete */
+	helper = fwupd_client_helper_new(self);
+	fwupd_client_repair_async(self,
+				  repair_item,
+				  action,
+				  cancellable,
+				  fwupd_client_repair_cb,
+				  helper);
+	g_main_loop_run(helper->loop);
+	if (!helper->ret) {
+		g_propagate_error(error, g_steal_pointer(&helper->error));
+		return FALSE;
+	}
+	return TRUE;
+}

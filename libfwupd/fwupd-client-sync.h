@@ -264,4 +264,11 @@ fwupd_client_emulation_save(FwupdClient *self,
 			    GCancellable *cancellable,
 			    GError **error) G_GNUC_WARN_UNUSED_RESULT;
 
+gboolean
+fwupd_client_repair(FwupdClient *self,
+		    const gchar *repair_item,
+		    const gchar *action,
+		    GCancellable *cancellable,
+		    GError **error);
+
 G_END_DECLS

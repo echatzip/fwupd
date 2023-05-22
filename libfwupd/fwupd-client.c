@@ -5875,6 +5875,92 @@ fwupd_client_emulation_save_finish(FwupdClient *self, GAsyncResult *res, GError 
 	return g_task_propagate_pointer(G_TASK(res), error);
 }
 
+
+/*HSI auto repair*/
+static void
+fwupd_client_repair_cb(GObject *source, GAsyncResult *res, gpointer user_data)
+{
+	g_autoptr(GTask) task = G_TASK(user_data);
+	g_autoptr(GError) error = NULL;
+	g_autoptr(GVariant) val = NULL;
+
+	val = g_dbus_proxy_call_finish(G_DBUS_PROXY(source), res, &error);
+	if (val == NULL) {
+		fwupd_client_fixup_dbus_error(error);
+		g_task_return_error(task, g_steal_pointer(&error));
+		return;
+	}
+
+	/* success */
+	g_task_return_boolean(task, TRUE);
+}
+
+/**
+ * fwupd_client_repair_async:
+ * @self: a #FwupdClient
+ * @repair_item: ApStreamID
+ * @action: action
+ * @cancellable: (nullable): optional #GCancellable
+ * @callback: (scope async) (closure callback_data): the function to run on completion
+ * @callback_data: the data to pass to @callback
+ *
+ * Repair the failed security attribute with blocking.
+ *
+ * Since: 1.9.2
+ **/
+void
+fwupd_client_repair_async(FwupdClient *self,
+			  const gchar *repair_item,
+			  const gchar *action,
+			  GCancellable *cancellable,
+			  GAsyncReadyCallback callback,
+			  gpointer callback_data)
+{
+	FwupdClientPrivate *priv = GET_PRIVATE(self);
+	g_autoptr(GTask) task = NULL;
+
+	g_return_if_fail(repair_item != NULL);
+	g_return_if_fail(action != NULL);
+	g_return_if_fail(FWUPD_IS_CLIENT(self));
+	g_return_if_fail(cancellable == NULL || G_IS_CANCELLABLE(cancellable));
+	g_return_if_fail(priv->proxy != NULL);
+
+	/* call into daemon */
+	task = g_task_new(self, cancellable, callback, callback_data);
+
+	g_dbus_proxy_call(priv->proxy,
+			  "Repair",
+			  g_variant_new("(ss)", repair_item, action),
+			  G_DBUS_CALL_FLAGS_NONE,
+			  FWUPD_CLIENT_DBUS_PROXY_TIMEOUT,
+			  cancellable,
+			  fwupd_client_repair_cb,
+			  g_steal_pointer(&task));
+}
+
+/**
+ * fwupd_client_repair_finish:
+ * @self: a #FwupdClient
+ * @res: (not nullable): the asynchronous result
+ * @error: (nullable): optional return location for an error
+ *
+ * Gets the result of [method@FwupdClient.repair_async].
+ *
+ * Returns: %TRUE for success
+ *
+ * Since: 1.9.2
+ **/
+gboolean
+fwupd_client_repair_finish(FwupdClient *self, GAsyncResult *res, GError **error)
+{
+	g_return_val_if_fail(FWUPD_IS_CLIENT(self), FALSE);
+	g_return_val_if_fail(g_task_is_valid(res, self), FALSE);
+	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
+	return g_task_propagate_boolean(G_TASK(res), error);
+}
+
+
+
 #ifdef SOUP_SESSION_COMPAT
 /* this is bad; we dlopen libsoup-2.4.so.1 and get the gtype manually
  * to avoid deps on both libcurl and libsoup whilst preserving ABI */

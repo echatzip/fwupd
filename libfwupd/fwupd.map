@@ -946,3 +946,11 @@ LIBFWUPD_1.9.1 {
     fwupd_report_set_flags;
   local: *;
 } LIBFWUPD_1.8.13;
+
+LIBFWUPD_1.9.2 {
+  global:
+    fwupd_client_repair;
+    fwupd_client_repair_async;
+    fwupd_client_repair_finish;
+  local: *;
+} LIBFWUPD_1.9.1;

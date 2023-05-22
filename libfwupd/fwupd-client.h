@@ -423,6 +423,17 @@ fwupd_client_emulation_save_finish(FwupdClient *self,
 				   GAsyncResult *res,
 				   GError **error) G_GNUC_WARN_UNUSED_RESULT;
 
+void
+fwupd_client_repair_async(FwupdClient *self,
+			  const gchar *repair_item,
+			  const gchar *action,
+			  GCancellable *cancellable,
+			  GAsyncReadyCallback callback,
+			  gpointer callback_data);
+
+gboolean
+fwupd_client_repair_finish(FwupdClient *self, GAsyncResult *res, GError **error);
+
 FwupdStatus
 fwupd_client_get_status(FwupdClient *self);
 gboolean
