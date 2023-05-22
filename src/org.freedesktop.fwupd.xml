@@ -827,6 +827,35 @@
     </method>
 
     <!--***********************************************************-->
+    <method name='Repair'>
+      <doc:doc>
+        <doc:description>
+          <doc:para>
+            Repair a failed HSI test item.
+          </doc:para>
+        </doc:description>
+      </doc:doc>
+      <arg type='s' name='repair_item' direction='in'>
+        <doc:doc>
+          <doc:summary>
+            <doc:para>
+              The fwupd streamID, e.g. ''.
+            </doc:para>
+          </doc:summary>
+        </doc:doc>
+      </arg>
+      <arg type='s' name='action' direction='in'>
+        <doc:doc>
+          <doc:summary>
+            <doc:para>
+              The action, e.g. 'do' or 'undo'.
+            </doc:para>
+          </doc:summary>
+        </doc:doc>
+      </arg>
+    </method>
+
+    <!--***********************************************************-->
     <method name='SelfSign'>
       <doc:doc>
         <doc:description>
