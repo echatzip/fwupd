@@ -28,6 +28,7 @@
 #include "fu-daemon.h"
 #include "fu-device-private.h"
 #include "fu-engine.h"
+#include "fu-engine-repair.h"
 #include "fu-polkit-authority.h"
 #include "fu-release.h"
 #include "fu-security-attrs-private.h"
@@ -510,6 +511,26 @@ fu_daemon_authorize_set_blocked_firmware_cb(GObject *source, GAsyncResult *res, 
 
 	/* success */
 	if (!fu_engine_set_blocked_firmware(helper->self->engine, helper->checksums, &error)) {
+		g_dbus_method_invocation_return_gerror(helper->invocation, error);
+		return;
+	}
+	g_dbus_method_invocation_return_value(helper->invocation, NULL);
+}
+
+static void
+fu_daemon_authorize_repair_cb(GObject *source, GAsyncResult *res, gpointer user_data)
+{
+	g_autoptr(FuMainAuthHelper) helper = (FuMainAuthHelper *)user_data;
+	g_autoptr(GError) error = NULL;
+
+	/* get result */
+	if (!fu_polkit_authority_check_finish(FU_POLKIT_AUTHORITY(source), res, &error)) {
+		g_dbus_method_invocation_return_gerror(helper->invocation, error);
+		return;
+	}
+
+	/* success */
+	if (!fu_engine_repair_do_undo(helper->self->engine, helper->key, helper->value, &error)) {
 		g_dbus_method_invocation_return_gerror(helper->invocation, error);
 		return;
 	}
@@ -1943,6 +1964,32 @@ fu_daemon_daemon_method_call(GDBusConnection *connection,
 					  auth_flags,
 					  NULL,
 					  fu_daemon_authorize_set_bios_settings_cb,
+					  g_steal_pointer(&helper));
+		return;
+	}
+	if (g_strcmp0(method_name, "Repair") == 0) {
+		g_autofree gchar *repair_item = NULL;
+		g_autofree gchar *action = NULL;
+		g_autoptr(FuMainAuthHelper) helper = NULL;
+		g_variant_get(parameters, "(ss)", &repair_item, &action);
+		g_debug("Called %s(%s)", method_name, repair_item);
+
+		/* authenticate */
+		fu_daemon_set_status(self, FWUPD_STATUS_WAITING_FOR_AUTH);
+		helper = g_new0(FuMainAuthHelper, 1);
+		helper->self = self;
+		helper->request = g_steal_pointer(&request);
+		helper->invocation = g_object_ref(invocation);
+		helper->checksums = g_ptr_array_new_with_free_func(g_free);
+		helper->key = g_steal_pointer(&repair_item);
+		helper->value = g_steal_pointer(&action);
+
+		fu_polkit_authority_check(self->authority,
+					  sender,
+					  "org.freedesktop.fwupd.repair",
+					  auth_flags,
+					  NULL,
+					  fu_daemon_authorize_repair_cb,
 					  g_steal_pointer(&helper));
 		return;
 	}
