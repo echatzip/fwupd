@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 Kate Hsuan <hpa@redhat.com>
+ * Copyright (C) 2023 Kate Hsuan <hpa@redhat.com>
  *
  * SPDX-License-Identifier: LGPL-2.1+
  */
@@ -118,15 +118,7 @@ fu_engine_repair_do_undo (FuEngine *self, const gchar *key, const gchar *value, 
 	if (!g_strcmp0 (key, FWUPD_SECURITY_ATTR_ID_PREBOOT_DMA_PROTECTION)) {
 		return fu_engine_repair_unsupport (error);
 	} else if (!g_strcmp0 (key, FWUPD_SECURITY_ATTR_ID_ENCRYPTED_RAM)) {
-		return fu_engine_repair_unsupport (error);
-	} else if (!g_strcmp0 (key, FWUPD_SECURITY_ATTR_ID_ENCRYPTED_RAM)) {
-		return fu_engine_repair_unsupport (error);
-	} else if (!g_strcmp0 (key, FWUPD_SECURITY_ATTR_ID_FWUPD_ATTESTATION)) {
-		return fu_engine_repair_unsupport (error);
-	} else if (!g_strcmp0 (key, FWUPD_SECURITY_ATTR_ID_FWUPD_PLUGINS)) {
-		return fu_engine_repair_unsupport (error);
-	} else if (!g_strcmp0 (key, FWUPD_SECURITY_ATTR_ID_FWUPD_UPDATES)) {
-		return fu_engine_repair_unsupport (error);
+		return fu_engine_repair_unsupport(error);
 	} else if (!g_strcmp0 (key, FWUPD_SECURITY_ATTR_ID_INTEL_BOOTGUARD_ENABLED)) {
 		return fu_engine_repair_unsupport (error);
 	} else if (!g_strcmp0 (key, FWUPD_SECURITY_ATTR_ID_INTEL_BOOTGUARD_VERIFIED)) {

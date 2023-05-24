@@ -835,11 +835,11 @@
           </doc:para>
         </doc:description>
       </doc:doc>
-      <arg type='s' name='repair_item' direction='in'>
+      <arg type='s' name='appstream_id' direction='in'>
         <doc:doc>
           <doc:summary>
             <doc:para>
-              The fwupd streamID, e.g. ''.
+              The fwupd Appstream ID, e.g. 'org.fwupd.hsi.Kernel.Lockdown'.
             </doc:para>
           </doc:summary>
         </doc:doc>
