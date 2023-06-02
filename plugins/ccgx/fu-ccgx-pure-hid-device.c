@@ -447,6 +447,7 @@ fu_ccgx_pure_hid_device_init(FuCcgxPureHidDevice *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_DUAL_IMAGE);
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_INTEL_ME2);
 	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_ONLY_WAIT_FOR_REPLUG);
+	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
 	fu_device_register_private_flag(FU_DEVICE(self),
 					FU_CCGX_PURE_HID_DEVICE_IS_IN_RESTART,
 					"is-in-restart");
