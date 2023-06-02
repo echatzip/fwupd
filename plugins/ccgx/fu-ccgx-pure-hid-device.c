@@ -14,12 +14,6 @@
 #include "fu-ccgx-pure-hid-device.h"
 #include "fu-ccgx-struct.h"
 
-#define ROW_SIZE	  128
-#define FW1_START	  0x0030
-#define FW2_START	  0x0200
-#define FW1_METADATA	  0x03FF
-#define FW2_METADATA	  0x03FE
-
 /**
  * FU_CCGX_PURE_HID_DEVICE_IS_IN_RESTART:
  *
@@ -31,7 +25,7 @@
 
 struct _FuCcgxPureHidDevice {
 	FuHidDevice parent_instance;
-	FuCcgxFwMode operating_mode;
+	FuCcgxFwMode fw_mode;
 	guint32 versions[FU_CCGX_FW_MODE_LAST];
 	guint32 silicon_id;
 	guint32 flash_row_size; // FIXME: unused?
@@ -145,14 +139,16 @@ fu_ccgx_pure_hid_ensure_fw_info(FuCcgxPureHidDevice *self, GError **error)
 	if (st_info == NULL)
 		return FALSE;
 	self->silicon_id = fu_struct_ccgx_pure_hid_fw_info_get_silicon_id(st_info);
-	self->operating_mode = fu_struct_ccgx_pure_hid_fw_info_get_operating_mode(st_info);
+	self->fw_mode = fu_struct_ccgx_pure_hid_fw_info_get_operating_mode(st_info);
 
-	/* set current version */
-	if (self->operating_mode == FU_CCGX_FW_MODE_FW1) {
-		guint version = fu_struct_ccgx_pure_hid_fw_info_get_image1_version(st_info);
+	/* set current version
+	 * Note that this is the base version, not the app version.
+	 */
+	if (self->fw_mode == FU_CCGX_FW_MODE_FW1) {
+		guint version = fu_struct_ccgx_pure_hid_fw_info_get_image1_base_version(st_info);
 		fu_device_set_version_from_uint32(FU_DEVICE(self), version);
-	} else if (self->operating_mode == FU_CCGX_FW_MODE_FW2) {
-		guint version = fu_struct_ccgx_pure_hid_fw_info_get_image2_version(st_info);
+	} else if (self->fw_mode == FU_CCGX_FW_MODE_FW2) {
+		guint version = fu_struct_ccgx_pure_hid_fw_info_get_image2_base_version(st_info);
 		fu_device_set_version_from_uint32(FU_DEVICE(self), version);
 	}
 
@@ -210,7 +206,7 @@ fu_ccgx_pure_hid_device_setup(FuDevice *device, GError **error)
 		return FALSE;
 
 	// TODO: Check if this is set properly
-	fu_device_set_logical_id(device, fu_ccgx_fw_mode_to_string(self->operating_mode));
+	fu_device_set_logical_id(device, fu_ccgx_fw_mode_to_string(self->fw_mode));
 	fu_device_add_instance_strup(device, "MODE", fu_device_get_logical_id(device));
 	if (!fu_device_build_instance_id(FU_DEVICE(self), error, "USB", "VID", "PID", "MODE", NULL))
 		return FALSE;
@@ -220,7 +216,7 @@ fu_ccgx_pure_hid_device_setup(FuDevice *device, GError **error)
 	if (!fu_device_build_instance_id_quirk(FU_DEVICE(self), error, "CCGX", "SID", NULL))
 		return FALSE;
 
-	if (self->operating_mode == FU_CCGX_FW_MODE_BOOT) {
+	if (self->fw_mode == FU_CCGX_FW_MODE_BOOT) {
 		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_IS_BOOTLOADER);
 		/* force an upgrade to any version */
 		fu_device_set_version_from_uint32(FU_DEVICE(self), 0x0);
@@ -240,6 +236,7 @@ static gboolean
 fu_ccgx_pure_hid_write_row(FuCcgxPureHidDevice *self,
 			   guint16 address,
 			   const guint8 *row,
+			   guint16 rowsize,
 			   GError **error)
 {
 	g_autoptr(GByteArray) st_hdr = fu_struct_ccgx_pure_hid_write_hdr_new();
@@ -252,9 +249,9 @@ fu_ccgx_pure_hid_write_row(FuCcgxPureHidDevice *self,
 			    st_hdr->len,
 			    FU_STRUCT_CCGX_PURE_HID_WRITE_HDR_OFFSET_DATA,
 			    row,
-			    ROW_SIZE,
+			    rowsize,
 			    0,
-			    ROW_SIZE,
+			    rowsize,
 			    error))
 		return FALSE;
 	if (!fu_hid_device_set_report(FU_HID_DEVICE(self),
@@ -272,48 +269,57 @@ fu_ccgx_pure_hid_write_row(FuCcgxPureHidDevice *self,
 
 static gboolean
 fu_ccgx_pure_hid_flash_firmware_image(FuCcgxPureHidDevice *self,
-				      const guint8 *fw_bytes,
-				      gsize fw_len,
-				      guint16 address_start,
-				      guint16 address_metadata,
+				      FuFirmware *firmware,
+				      FuProgress *progress,
 				      guint8 fw_img_no,
 				      GError **error)
 {
-	gsize rows;
+	GPtrArray *records = fu_ccgx_firmware_get_records(FU_CCGX_FIRMWARE(firmware));
 
-	// TODO: Probably not required
+	fu_progress_set_id(progress, G_STRLOC);
+	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 5, "unlock");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 90, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 5, "bootswitch");
+
 	if (!fu_ccgx_pure_hid_magic_unlock(self, error))
 		return FALSE;
+	// TODO: Probably not required
 	if (!fu_ccgx_pure_hid_ensure_fw_info(self, error))
 		return FALSE;
+	fu_progress_step_done(progress);
 
-	g_assert(fw_len % ROW_SIZE == 0);
-	rows = fw_len / ROW_SIZE;
+	for (guint i = 0; i < records->len; i++) {
+		FuCcgxFirmwareRecord *rcd = g_ptr_array_index(records, i);
 
-	for (gsize address = 0; address < rows; address++) {
-		const guint8 *row = fw_bytes + address * ROW_SIZE;
-		g_debug("writing row %u", (guint)address);
-		if (address == rows - 1) {
-			g_debug("Writing metadata row");
-			// Last row is the metadata row. It's at a different offset
-			if (!fu_ccgx_pure_hid_write_row(self, address_metadata, row, error))
-				return FALSE;
-		} else {
-			g_debug("Writing row #%lu 0x%04lx", address, address_start + address);
-			if (!fu_ccgx_pure_hid_write_row(self, address_start + address, row, error))
-				return FALSE;
+		g_debug("Writing row #%u @0x%04lx", i, rcd->row_number);
+		if (!fu_ccgx_pure_hid_write_row(self,
+						rcd->row_number,
+						g_bytes_get_data(rcd->data, NULL),
+						g_bytes_get_size(rcd->data),
+						error)) {
+			g_prefix_error(error, "fw write error @0x%x: ", rcd->row_number);
+			return FALSE;
 		}
+
+		fu_progress_set_percentage_full(fu_progress_get_child(progress),
+						(gsize)i + 1,
+						(gsize)records->len);
 	}
+	fu_progress_step_done(progress);
 
 	// TODO: Doing this and reset by themselves (with magic unlock) doesn't
 	// switch to the alternative image. Seems we always need to flash in
 	// order to switch.
 	g_debug("before bootswitch");
+	// TODO: fw_img_no should just be
+	// fw_img_no = fu_ccgx_firmware_get_fw_mode(FW_CCGX_FIRMWARE(firmware))
 	if (!fu_ccgx_pure_hid_command(self, CCGX_HID_CMD_SET_BOOT, fw_img_no, error)) {
 		g_prefix_error(error, "bootswitch command error: ");
 		return FALSE;
 	}
 	g_debug("After bootswitch");
+	fu_progress_step_done(progress);
 
 	g_debug("before reset");
 	if (!fu_ccgx_pure_hid_command(self,
@@ -328,6 +334,58 @@ fu_ccgx_pure_hid_flash_firmware_image(FuCcgxPureHidDevice *self,
 	return TRUE;
 }
 
+static FuFirmware *
+fu_ccgx_pure_hid_device_prepare_firmware(FuDevice *device,
+					 GBytes *fw,
+					 FwupdInstallFlags flags,
+					 GError **error)
+{
+	FuCcgxPureHidDevice *self = FU_CCGX_PURE_HID_DEVICE(device);
+	FuCcgxFwMode fw_mode;
+	guint16 fw_silicon_id;
+	g_autoptr(FuFirmware) firmware = fu_ccgx_firmware_new();
+
+	/* parse all images */
+	if (!fu_firmware_parse(firmware, fw, flags, error))
+		return NULL;
+
+	/* check the silicon ID */
+	fw_silicon_id = fu_ccgx_firmware_get_silicon_id(FU_CCGX_FIRMWARE(firmware));
+	if (fw_silicon_id != self->silicon_id) {
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "silicon id mismatch, expected 0x%x, got 0x%x",
+			    self->silicon_id,
+			    fw_silicon_id);
+		return NULL;
+	}
+	// TODO: Check if we can get this from the device at run-time
+	// if ((flags & FWUPD_INSTALL_FLAG_IGNORE_VID_PID) == 0) {
+	//	fw_app_type = fu_ccgx_firmware_get_app_type(FU_CCGX_FIRMWARE(firmware));
+	//	if (fw_app_type != self->fw_app_type) {
+	//		g_set_error(error,
+	//			    FWUPD_ERROR,
+	//			    FWUPD_ERROR_NOT_SUPPORTED,
+	//			    "app type mismatch, expected 0x%x, got 0x%x",
+	//			    self->fw_app_type,
+	//			    fw_app_type);
+	//		return NULL;
+	//	}
+	//}
+	fw_mode = fu_ccgx_firmware_get_fw_mode(FU_CCGX_FIRMWARE(firmware));
+	if (fw_mode != fu_ccgx_fw_mode_get_alternate(self->fw_mode)) {
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "FuCcgxFwMode mismatch, expected %s, got %s",
+			    fu_ccgx_fw_mode_to_string(fu_ccgx_fw_mode_get_alternate(self->fw_mode)),
+			    fu_ccgx_fw_mode_to_string(fw_mode));
+		return NULL;
+	}
+	return g_steal_pointer(&firmware);
+}
+
 static gboolean
 fu_ccgx_pure_hid_device_write_firmware(FuDevice *device,
 				       FuFirmware *firmware,
@@ -336,80 +394,29 @@ fu_ccgx_pure_hid_device_write_firmware(FuDevice *device,
 				       GError **error)
 {
 	FuCcgxPureHidDevice *self = FU_CCGX_PURE_HID_DEVICE(device);
-	g_autoptr(GBytes) fw = NULL;
-	gsize fw_total_size;
-	gsize fw_size;
-	const guint8 *fw_bytes;
-	const guint8 *fw1_binary;
-	const guint8 *fw2_binary;
 
-	/* get blob and read */
-	fw = fu_firmware_get_bytes(FU_FIRMWARE(firmware), error);
-	if (fw == NULL)
-		return FALSE;
-
-	fw_bytes = g_bytes_get_data(fw, NULL);
-	fw_total_size = g_bytes_get_size(fw);
-	fw_size = fw_total_size / 2;
-
-	// TODO: Do this in prepare_firmware
-	// Make sure there are two firmware images composed of full rows
-	g_assert(fw_total_size % 2 * ROW_SIZE == 0);
-	fw1_binary = fw_bytes;
-	fw2_binary = &fw_bytes[fw_size];
-
-	// FIXME: needed?
-	if (!fu_ccgx_pure_hid_magic_unlock(self, error))
-		return FALSE;
-	if (!fu_ccgx_pure_hid_ensure_fw_info(self, error))
-		return FALSE;
-
-	g_debug("Operating Mode:  0x%02x", self->operating_mode);
-	switch (self->operating_mode) {
+	g_debug("Operating Mode:  0x%02x", self->fw_mode);
+	switch (self->fw_mode) {
 	case FU_CCGX_FW_MODE_BOOT:
 	case FU_CCGX_FW_MODE_FW2:
 		// Update Image 1
 		g_debug("Flashing Image 1");
-		if (!fu_ccgx_pure_hid_flash_firmware_image(self,
-							   fw1_binary,
-							   fw_size,
-							   FW1_START,
-							   FW1_METADATA,
-							   1,
-							   error))
+		if (!fu_ccgx_pure_hid_flash_firmware_image(self, firmware, progress, 1, error))
 			return FALSE;
 
 		g_debug("Add wait for replug");
 		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_WAIT_FOR_REPLUG);
 		fu_device_add_private_flag(device, FU_CCGX_PURE_HID_DEVICE_IS_IN_RESTART);
-
-		// TODO: Wait 5s
-		// TODO: Refresh HID devices
-		// fu_ccgx_pure_hid_magic_unlock(device, user_data, error);
-		// Update Image 2
-		// flash_firmware_image(device, fw2_binary, fw_size, FW2_START, FW2_METADATA, 2);
 		break;
 	case FU_CCGX_FW_MODE_FW1:
 		// Update Image 2
 		g_debug("Flashing Image 2");
-		if (!fu_ccgx_pure_hid_flash_firmware_image(self,
-							   fw2_binary,
-							   fw_size,
-							   FW2_START,
-							   FW2_METADATA,
-							   2,
-							   error))
+		if (!fu_ccgx_pure_hid_flash_firmware_image(self, firmware, progress, 2, error))
 			return FALSE;
 
 		g_debug("Add wait for replug");
 		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_WAIT_FOR_REPLUG);
 		fu_device_add_private_flag(device, FU_CCGX_PURE_HID_DEVICE_IS_IN_RESTART);
-
-		// TODO: Wait 5s
-		// TODO: Refresh HID devices
-		// fu_ccgx_pure_hid_magic_unlock(device, user_data, error);
-		// Update Image 1
-		// flash_firmware_image(device, fw1_binary, fw_size, FW1_START, FW1_METADATA, 1);
 		break;
 	default:
 		return FALSE;
@@ -418,15 +425,16 @@ fu_ccgx_pure_hid_device_write_firmware(FuDevice *device,
 	return TRUE;
 }
 
+// TODO: Need this? Why are there two?
 static void
 fu_ccgx_pure_hid_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 25, "detach");
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 50, "write");
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 25, "attach");
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 50, "reload");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 5, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 45, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 5, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 45, "reload");
 }
 
 static void
@@ -437,7 +445,7 @@ fu_ccgx_pure_hid_device_init(FuCcgxPureHidDevice *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_DUAL_IMAGE);
-	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_QUAD);
+	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_INTEL_ME2);
 	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_ONLY_WAIT_FOR_REPLUG);
 	fu_device_register_private_flag(FU_DEVICE(self),
 					FU_CCGX_PURE_HID_DEVICE_IS_IN_RESTART,
@@ -449,7 +457,7 @@ fu_ccgx_pure_hid_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuCcgxPureHidDevice *self = FU_CCGX_PURE_HID_DEVICE(device);
 	fu_string_append_kx(str, idt, "SiliconId", self->silicon_id);
-	fu_string_append(str, idt, "FwMode", fu_ccgx_fw_mode_to_string(self->operating_mode));
+	fu_string_append(str, idt, "FwMode", fu_ccgx_fw_mode_to_string(self->fw_mode));
 	if (self->flash_row_size > 0)
 		fu_string_append_kx(str, idt, "CcgxFlashRowSize", self->flash_row_size);
 	if (self->flash_size > 0)
@@ -509,6 +517,5 @@ fu_ccgx_pure_hid_device_class_init(FuCcgxPureHidDeviceClass *klass)
 	klass_device->set_progress = fu_ccgx_pure_hid_device_set_progress;
 	klass_device->set_quirk_kv = fu_ccgx_pure_hid_device_set_quirk_kv;
 	klass_device->close = fu_ccgx_pure_hid_device_close;
-	// TODO: Check firmware file
-	// klass_device->prepare_firmware = fu_ccgx_pure_hid_device_prepare_firmware;
+	klass_device->prepare_firmware = fu_ccgx_pure_hid_device_prepare_firmware;
 }
