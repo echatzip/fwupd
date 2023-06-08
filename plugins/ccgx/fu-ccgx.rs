@@ -92,7 +92,7 @@ enum CcgxPdResp {
 }
 
 #[derive(Parse)]
-struct CcgxPureHidFwInfo {
+struct CcgxNativeHidFwInfo {
     report_id: u8: const=0xE0,
     _reserved_1: u8,
     signature: u16le: const=0x5943,
@@ -114,7 +114,7 @@ struct CcgxPureHidFwInfo {
 }
 
 #[repr(u8)]
-enum FuCcgxPureHidReportId {
+enum FuCcgxNativeHidReportId {
     Info = 0xE0,
     Command = 0xE1,
     Write = 0xE2,
@@ -123,8 +123,8 @@ enum FuCcgxPureHidReportId {
 }
 
 #[derive(New)]
-struct CcgxPureHidWriteHdr {
-    report_id: FuCcgxPureHidReportId: const=0xE2,
+struct CcgxNativeHidWriteHdr {
+    report_id: FuCcgxNativeHidReportId: const=0xE2,
     pd_resp: u8,
     addr: u16le,
     data: [u8; 128],
