@@ -28,8 +28,6 @@ struct _FuCcgxNativeHidDevice {
 	FuCcgxFwMode fw_mode;
 	guint32 versions[FU_CCGX_FW_MODE_LAST];
 	guint32 silicon_id;
-	guint32 flash_row_size; // FIXME: unused?
-	guint32 flash_size;	// FIXME: unused?
 };
 G_DEFINE_TYPE(FuCcgxNativeHidDevice, fu_ccgx_native_hid_device, FU_TYPE_HID_DEVICE)
 
@@ -237,7 +235,7 @@ fu_ccgx_native_hid_write_row(FuCcgxNativeHidDevice *self,
 	fu_struct_ccgx_native_hid_write_hdr_set_pd_resp(st_hdr,
 							FU_CCGX_PD_RESP_FLASH_READ_WRITE_CMD_SIG);
 	fu_struct_ccgx_native_hid_write_hdr_set_addr(st_hdr, address);
-	//	buf[0] = FU_CCGX_NATIVE_HID_REPORT_ID_WRITE;
+
 	if (!fu_memcpy_safe(st_hdr->data,
 			    st_hdr->len,
 			    FU_STRUCT_CCGX_NATIVE_HID_WRITE_HDR_OFFSET_DATA,
@@ -277,15 +275,13 @@ fu_ccgx_native_hid_flash_firmware_image(FuCcgxNativeHidDevice *self,
 
 	if (!fu_ccgx_native_hid_magic_unlock(self, error))
 		return FALSE;
-	// TODO: Probably not required
-	if (!fu_ccgx_native_hid_ensure_fw_info(self, error))
-		return FALSE;
+
 	fu_progress_step_done(progress);
 
 	for (guint i = 0; i < records->len; i++) {
 		FuCcgxFirmwareRecord *rcd = g_ptr_array_index(records, i);
 
-		g_debug("Writing row #%u @0x%04lx", i, rcd->row_number);
+		g_debug("writing row #%u @0x%04lx", i, rcd->row_number);
 		if (!fu_ccgx_native_hid_write_row(self,
 						  rcd->row_number,
 						  g_bytes_get_data(rcd->data, NULL),
@@ -304,17 +300,14 @@ fu_ccgx_native_hid_flash_firmware_image(FuCcgxNativeHidDevice *self,
 	// TODO: Doing this and reset by themselves (with magic unlock) doesn't
 	// switch to the alternative image. Seems we always need to flash in
 	// order to switch.
-	g_debug("before bootswitch");
 	// TODO: fw_img_no should just be
 	// fw_img_no = fu_ccgx_firmware_get_fw_mode(FW_CCGX_FIRMWARE(firmware))
 	if (!fu_ccgx_native_hid_command(self, CCGX_HID_CMD_SET_BOOT, fw_img_no, error)) {
 		g_prefix_error(error, "bootswitch command error: ");
 		return FALSE;
 	}
-	g_debug("After bootswitch");
 	fu_progress_step_done(progress);
 
-	g_debug("before reset");
 	if (!fu_ccgx_native_hid_command(self,
 					CCGX_HID_CMD_JUMP,
 					FU_CCGX_PD_RESP_DEVICE_RESET_CMD_SIG,
@@ -322,7 +315,6 @@ fu_ccgx_native_hid_flash_firmware_image(FuCcgxNativeHidDevice *self,
 		g_prefix_error(error, "reset command error: ");
 		return FALSE;
 	}
-	g_debug("After reset");
 
 	return TRUE;
 }
@@ -388,32 +380,18 @@ fu_ccgx_native_hid_device_write_firmware(FuDevice *device,
 {
 	FuCcgxNativeHidDevice *self = FU_CCGX_NATIVE_HID_DEVICE(device);
 
-	g_debug("Operating Mode:  0x%02x", self->fw_mode);
-	switch (self->fw_mode) {
-	case FU_CCGX_FW_MODE_BOOT:
-	case FU_CCGX_FW_MODE_FW2:
-		// Update Image 1
+	if (self->fw_mode == FU_CCGX_FW_MODE_BOOT || self->fw_mode == FU_CCGX_FW_MODE_FW2) {
 		g_debug("Flashing Image 1");
 		if (!fu_ccgx_native_hid_flash_firmware_image(self, firmware, progress, 1, error))
 			return FALSE;
-
-		g_debug("Add wait for replug");
-		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_WAIT_FOR_REPLUG);
-		fu_device_add_private_flag(device, FU_CCGX_NATIVE_HID_DEVICE_IS_IN_RESTART);
-		break;
-	case FU_CCGX_FW_MODE_FW1:
-		// Update Image 2
+	} else {
 		g_debug("Flashing Image 2");
 		if (!fu_ccgx_native_hid_flash_firmware_image(self, firmware, progress, 2, error))
 			return FALSE;
-
-		g_debug("Add wait for replug");
-		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_WAIT_FOR_REPLUG);
-		fu_device_add_private_flag(device, FU_CCGX_NATIVE_HID_DEVICE_IS_IN_RESTART);
-		break;
-	default:
-		return FALSE;
 	}
+
+	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_WAIT_FOR_REPLUG);
+	fu_device_add_private_flag(device, FU_CCGX_NATIVE_HID_DEVICE_IS_IN_RESTART);
 
 	return TRUE;
 }
@@ -433,7 +411,6 @@ fu_ccgx_native_hid_device_set_progress(FuDevice *self, FuProgress *progress)
 static void
 fu_ccgx_native_hid_device_init(FuCcgxNativeHidDevice *self)
 {
-	// FIXME: I don't think this is try anymore
 	fu_device_add_protocol(FU_DEVICE(self), "com.infineon.ccgx");
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
@@ -452,10 +429,6 @@ fu_ccgx_native_hid_device_to_string(FuDevice *device, guint idt, GString *str)
 	FuCcgxNativeHidDevice *self = FU_CCGX_NATIVE_HID_DEVICE(device);
 	fu_string_append_kx(str, idt, "SiliconId", self->silicon_id);
 	fu_string_append(str, idt, "FwMode", fu_ccgx_fw_mode_to_string(self->fw_mode));
-	if (self->flash_row_size > 0)
-		fu_string_append_kx(str, idt, "CcgxFlashRowSize", self->flash_row_size);
-	if (self->flash_size > 0)
-		fu_string_append_kx(str, idt, "CcgxFlashSize", self->flash_size);
 }
 
 static gboolean
@@ -471,18 +444,6 @@ fu_ccgx_native_hid_device_set_quirk_kv(FuDevice *device,
 		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT16, error))
 			return FALSE;
 		self->silicon_id = tmp;
-		return TRUE;
-	}
-	if (g_strcmp0(key, "CcgxFlashRowSize") == 0) {
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, error))
-			return FALSE;
-		self->flash_row_size = tmp;
-		return TRUE;
-	}
-	if (g_strcmp0(key, "CcgxFlashSize") == 0) {
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, error))
-			return FALSE;
-		self->flash_size = tmp;
 		return TRUE;
 	}
 	g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, "no supported");

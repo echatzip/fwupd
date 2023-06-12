@@ -94,12 +94,12 @@ enum CcgxPdResp {
 #[derive(Parse)]
 struct CcgxNativeHidFwInfo {
     report_id: u8: const=0xE0,
-    _reserved_1: u8,
+    _reserved1: u8,
     signature: u16le: const=0x5943,
     operating_mode: CcgxFwMode,
     bootloader_info: u8,
     bootmode_reason: u8,
-    _reserved_2: u8,
+    _reserved2: u8,
     silicon_id: u32le,
     bl_version: u32le,
     _bl_version_reserved: [u8; 4],
@@ -110,7 +110,7 @@ struct CcgxNativeHidFwInfo {
     image1_row: u32le,
     image2_row: u32le,
     device_uid: [u8; 6],
-    _reserved_3: [u8; 10],
+    _reserved3: [u8; 10],
 }
 
 #[repr(u8)]
