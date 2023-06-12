@@ -14,15 +14,6 @@
 #include "fu-ccgx-native-hid-device.h"
 #include "fu-ccgx-struct.h"
 
-/**
- * FU_CCGX_NATIVE_HID_DEVICE_IS_IN_RESTART:
- *
- * Device is in restart and should not be closed manually.
- *
- * Since: 1.9.2
- */
-#define FU_CCGX_NATIVE_HID_DEVICE_IS_IN_RESTART (1 << 0)
-
 struct _FuCcgxNativeHidDevice {
 	FuHidDevice parent_instance;
 	FuCcgxFwMode fw_mode;
@@ -161,25 +152,6 @@ fu_ccgx_native_hid_ensure_fw_info(FuCcgxNativeHidDevice *self, GError **error)
 					fu_device_get_version_format(self));
 	fu_device_set_version_bootloader(FU_DEVICE(self), bl_ver);
 	return TRUE;
-}
-
-static gboolean
-fu_ccgx_native_hid_device_attach(FuDevice *device, FuProgress *progress, GError **error)
-{
-	fu_device_remove_flag(device, FWUPD_DEVICE_FLAG_WAIT_FOR_REPLUG);
-	fu_device_remove_private_flag(device, FU_CCGX_NATIVE_HID_DEVICE_IS_IN_RESTART);
-	return TRUE;
-}
-
-static gboolean
-fu_ccgx_native_hid_device_close(FuDevice *device, GError **error)
-{
-	/* do not close handle when device restarts */
-	if (fu_device_has_private_flag(device, FU_CCGX_NATIVE_HID_DEVICE_IS_IN_RESTART))
-		return TRUE;
-
-	/* FuUsbDevice->close */
-	return FU_DEVICE_CLASS(fu_ccgx_native_hid_device_parent_class)->close(device, error);
 }
 
 static gboolean
@@ -391,7 +363,6 @@ fu_ccgx_native_hid_device_write_firmware(FuDevice *device,
 	}
 
 	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_WAIT_FOR_REPLUG);
-	fu_device_add_private_flag(device, FU_CCGX_NATIVE_HID_DEVICE_IS_IN_RESTART);
 
 	return TRUE;
 }
@@ -418,9 +389,6 @@ fu_ccgx_native_hid_device_init(FuCcgxNativeHidDevice *self)
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_INTEL_ME2);
 	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_ONLY_WAIT_FOR_REPLUG);
 	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
-	fu_device_register_private_flag(FU_DEVICE(self),
-					FU_CCGX_NATIVE_HID_DEVICE_IS_IN_RESTART,
-					"is-in-restart");
 }
 
 static void
@@ -455,12 +423,9 @@ fu_ccgx_native_hid_device_class_init(FuCcgxNativeHidDeviceClass *klass)
 {
 	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
 	klass_device->to_string = fu_ccgx_native_hid_device_to_string;
-	klass_device->attach = fu_ccgx_native_hid_device_attach;
-	// klass_device->detach = fu_ccgx_native_hid_device_detach;
 	klass_device->setup = fu_ccgx_native_hid_device_setup;
 	klass_device->write_firmware = fu_ccgx_native_hid_device_write_firmware;
 	klass_device->set_progress = fu_ccgx_native_hid_device_set_progress;
 	klass_device->set_quirk_kv = fu_ccgx_native_hid_device_set_quirk_kv;
-	klass_device->close = fu_ccgx_native_hid_device_close;
 	klass_device->prepare_firmware = fu_ccgx_native_hid_device_prepare_firmware;
 }
