@@ -532,9 +532,16 @@ fu_uefi_capsule_plugin_get_default_esp(FuPlugin *plugin, GError **error)
 	if (esp_volumes->len > 1) {
 		for (guint i = 0; i < esp_volumes->len; i++) {
 			FuVolume *esp = g_ptr_array_index(esp_volumes, i);
+			guint64 esp_size = fu_volume_get_size(esp);
 			g_autoptr(FuDeviceLocker) locker = NULL;
 			g_autoptr(GError) error_local = NULL;
 
+			/* ignore small installer partitions if we have something better */
+			if (esp_size > 0 && esp_size < 16 * 1024 * 1024) {
+				g_autofree gchar *sizestr = g_format_size(esp_size);
+				g_debug("ignoring small ESP of %s", sizestr);
+				continue;
+			}
 			locker = fu_volume_locker(esp, &error_local);
 			if (locker == NULL) {
 				g_warning("failed to mount ESP: %s", error_local->message);
