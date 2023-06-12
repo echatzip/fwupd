@@ -1234,6 +1234,7 @@ fu_util_install(FuUtilPrivate *priv, gchar **values, GError **error)
 
 	/* progress */
 	fu_progress_set_id(priv->progress, G_STRLOC);
+	fu_progress_add_flag(priv->progress, FU_PROGRESS_FLAG_NO_PROFILE);
 	fu_progress_add_step(priv->progress, FWUPD_STATUS_LOADING, 50, "start-engine");
 	fu_progress_add_step(priv->progress, FWUPD_STATUS_DEVICE_WRITE, 50, NULL);
 
